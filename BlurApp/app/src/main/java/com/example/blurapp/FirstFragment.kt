@@ -11,8 +11,11 @@ import androidx.core.graphics.drawable.toBitmap
 import androidx.fragment.app.Fragment
 import com.example.blurapp.databinding.FragmentFirstBinding
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 /**
  * A simple [Fragment] subclass as the default destination in the navigation.
@@ -40,7 +43,7 @@ class FirstFragment : Fragment() {
 
         binding.blur.setOnClickListener {
             binding.imageView.setImageBitmap(
-               boxBlur(binding.imageView.drawable.toBitmap(), 20)
+               gaussianBlur(binding.imageView.drawable.toBitmap(), 10)
             )
         }
     }
@@ -49,6 +52,119 @@ class FirstFragment : Fragment() {
         super.onDestroyView()
         _binding = null
     }
+}
+
+fun gaussianBlur(input:Bitmap, radius:Int): Bitmap {
+    Log.e("blurtask", "started")
+    val blurBit = input.copy(input.config, true)
+
+    val blurThread = Thread {
+        val kernel = Array(radius * 2 + 1) {
+            0.0
+        }
+
+        val pi = 3.141592653
+        val sigma =  20.0
+        val e = 2.71828182845904
+        val coeff1 = 1 / sqrt(2 * pi * sigma.pow(2))
+        val coeff2 = -(1 / (2 * sigma.pow(2)))
+
+        var total = 0.0
+
+        for (r in -radius..radius) {
+            val fRadius = r.toFloat()
+            val kernelPos = r + radius
+            val x = coeff1 * e.pow(fRadius.pow(2) * coeff2)
+            kernel[kernelPos] = x
+            total += x
+        }
+
+        for (x in kernel.indices) {
+            kernel[x] = kernel[x] / total
+        }
+
+        var inPixels = IntArray(blurBit.width * blurBit.height)
+        val outPixels = IntArray(blurBit.width * blurBit.height)
+        blurBit.getPixels(inPixels, 0, blurBit.width, 0, 0, blurBit.width, blurBit.height)
+        var leftPixel = 0
+        var x = 0
+
+        //horizontal pass
+        for (p in inPixels.indices) {
+            var redSum = 0.0
+            var greenSum = 0.0
+            var blueSum = 0.0
+            var alphaSum = 0.0
+
+            for (r in -radius..radius) {
+                val safeP = min(max(p + r, leftPixel), inPixels.size - 1)
+                redSum += Color.red(inPixels[safeP]) * kernel[r + radius]
+                greenSum += Color.green(inPixels[safeP]) * kernel[r + radius]
+                blueSum += Color.blue(inPixels[safeP]) * kernel[r + radius]
+                alphaSum += Color.alpha(inPixels[safeP]) * kernel[r + radius]
+            }
+
+            val red = (redSum).toInt()
+            val green = (greenSum).toInt()
+            val blue = (blueSum).toInt()
+            val alpha = (alphaSum).toInt()
+
+            val color = Color.argb(alpha, red, green, blue)
+
+            outPixels[p] = color
+            x++
+            if(x == blurBit.width){
+                leftPixel += blurBit.width
+            }
+        }
+
+        inPixels = outPixels
+
+        var topPix = 0
+        var bottomPix = inPixels.size - blurBit.width
+
+        //vertical pass
+        for (p in inPixels.indices) {
+            var redSum = 0.0
+            var greenSum = 0.0
+            var blueSum = 0.0
+            var alphaSum = 0.0
+
+            for (r in -radius..radius) {
+                val safeP = min(max(p + (r * blurBit.width), topPix), bottomPix)
+                redSum += Color.red(inPixels[safeP]) * kernel[r + radius]
+                greenSum += Color.green(inPixels[safeP]) * kernel[r + radius]
+                blueSum += Color.blue(inPixels[safeP]) * kernel[r + radius]
+                alphaSum += Color.alpha(inPixels[safeP]) * kernel[r + radius]
+            }
+
+            val red = (redSum).toInt()
+            val green = (greenSum).toInt()
+            val blue = (blueSum).toInt()
+            val alpha = (alphaSum).toInt()
+
+            val color = Color.argb(alpha, red, green, blue)
+
+            outPixels[p] = color
+
+            topPix++
+            if(topPix == blurBit.width){
+                topPix = 0
+            }
+
+            bottomPix++
+            if(bottomPix == inPixels.size){
+                bottomPix = inPixels.size - blurBit.width
+            }
+        }
+
+        blurBit.setPixels(outPixels, 0, blurBit.width, 0, 0, blurBit.width, blurBit.height)
+    }
+
+    blurThread.start()
+    blurThread.join()
+    Log.e("blurtask", "finished")
+    return blurBit.copy(input.config, false)
 }
 
 fun boxBlur(input: Bitmap, radius: Int): Bitmap {
